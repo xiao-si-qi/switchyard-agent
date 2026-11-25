@@ -1,0 +1,16 @@
+# 构建产物
+/switchyard-agent
+/dist/
+
+# 日志与本地配置
+*.log
+*.conf.local
+
+# Go
+vendor/
+
+# 编辑器
+.idea/
+.vscode/
+*.swp
+.DS_Store

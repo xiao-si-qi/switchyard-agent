@@ -1,0 +1,20 @@
+[Unit]
+Description=Switchyard device agent
+Documentation=https://github.com/xiao-si-qi/switchyard-agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# 配置全部来自这里（root 600 权限，里面有 MQTT 密码）
+EnvironmentFile=/etc/switchyard/agent.conf
+# 用 sh -c exec 包一层，把输出重定向到文件：
+# agent 的 `get log` 命令回传的就是这个文件，所以必须落盘而不是只进 journal
+ExecStart=/bin/sh -c 'exec /usr/local/bin/switchyard-agent >> /var/log/switchyard-agent.log 2>&1'
+Restart=always
+RestartSec=5
+# 需要 root：读 /proc、执行重启、写 /var/lib
+User=root
+
+[Install]
+WantedBy=multi-user.target

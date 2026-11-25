@@ -1,0 +1,55 @@
+# Switchyard Agent 配置
+#
+# 权限建议 600（含密码）：chmod 600 /etc/switchyard/agent.conf
+# 改完重启服务生效。
+
+# ============ MQTT broker ============
+MQTT_HOST=ha.example.com
+MQTT_PORT=1883
+
+# broker 在公网时必须开 TLS（否则凭据和命令全程明文）
+#   0 = 明文 tcp://          （仅可信内网）
+#   1 = TLS   ssl://         （公网务必用这个）
+MQTT_TLS=0
+
+# 自签/企业 CA 的证书路径；留空则用系统根证书（Let's Encrypt 走这条）
+#MQTT_CA_FILE=/etc/switchyard/ca.pem
+
+# 跳过证书与主机名校验，仅调试用，生产环境务必保持 0
+MQTT_INSECURE=0
+
+# 覆盖 SNI / 证书校验用的主机名，默认等于 MQTT_HOST
+#MQTT_SERVER_NAME=
+
+MQTT_USERNAME=
+MQTT_PASSWORD=
+
+# ============ 设备身份 ============
+# 会进 MQTT 主题和 HA object_id：只能小写字母、数字、- 和 _，≤31 字符
+SY_DEVICE_ID=
+# 台账和 HA 里显示的名字
+SY_DEVICE_NAME=
+# 设备型号（HA 设备卡片上显示）
+#SY_DEVICE_MODEL=Linux host
+# 设备类型，host 表示主机类
+#SY_DEVICE_TYPE=host
+
+# ============ 行为 ============
+# 上报周期（秒），之后可被 Switchyard 的配置下发覆盖
+SY_INTERVAL=60
+
+# 状态目录（seq、interval 持久化）
+#SY_STATE_DIR=/var/lib/switchyard-agent
+# 日志文件（`get log` 命令回传的就是这个文件）
+#SY_LOG_FILE=/var/log/switchyard-agent.log
+
+# 重启命令，默认自动探测：systemd 用 "systemctl reboot"，否则 /sbin/reboot
+#SY_REBOOT_CMD=
+
+# 网卡名前缀（空格分隔）：默认 "eth en" 和 "wlan wl"
+# 特殊环境可覆盖，比如 SY_ETH_PREFIX=br0
+#SY_ETH_PREFIX=
+#SY_WLAN_PREFIX=
+
+# 可移动存储插拔探测，容器/无 /sys 环境设为 0
+#SY_USB_DETECT=1

@@ -1,0 +1,27 @@
+#!/sbin/openrc-run
+# Switchyard 设备代理（Alpine / OpenRC）
+# 配置：/etc/switchyard/agent.conf
+
+description="Switchyard device agent"
+
+command="/usr/local/bin/switchyard-agent"
+command_background=true
+command_user="root"
+pidfile="/run/switchyard-agent.pid"
+output_log="/var/log/switchyard-agent.log"
+error_log="/var/log/switchyard-agent.log"
+
+depend() {
+    need net
+    after firewall
+}
+
+start_pre() {
+    mkdir -p /run /var/log /etc/switchyard "$(sed -n 's/^SY_STATE_DIR=//p' /etc/switchyard/agent.conf 2>/dev/null || echo /var/lib/switchyard-agent)"
+    if [ -f /etc/switchyard/agent.conf ]; then
+        set -a
+        # shellcheck disable=SC1091
+        . /etc/switchyard/agent.conf
+        set +a
+    fi
+}
