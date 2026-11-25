@@ -107,13 +107,47 @@ detect_init() {
 }
 
 # ---------------------------------------------------------------- 下载
-# 单个 URL 取文件。带"低速自动放弃"：卡住的连接 30 秒内低于 2KB/s 就换源，
-# 否则在某些网络上会一直挂着不动。
+# 候选源顺序：直连 → SY_MIRROR → 内置公共镜像
+candidates() {
+    url="$1"
+    printf '%s\n' "$url"
+    [ -n "${SY_MIRROR:-}" ] && printf '%s\n' "${SY_MIRROR%/}/$url"
+    if [ "${SY_NO_MIRROR:-0}" != "1" ]; then
+        for m in https://ghproxy.net https://gh-proxy.com https://ghfast.top; do
+            printf '%s\n' "$m/$url"
+        done
+    fi
+    return 0
+}
+
+# 下载前先探测：每个源只取 1KB、最多 6 秒，选响应最快的那个。
+# 这样不会在"能连但几乎不动"的直连上白等好几分钟。
+# 输出 "耗时 URL"；没有可用源时输出空。
+pick_source() {
+    url="$1"
+    best=""; best_t=""
+    for u in $(candidates "$url"); do
+        r=$(curl -sL --http1.1 --max-time 6 --range 0-1023 -o /dev/null \
+             -w '%{http_code} %{time_total}' "$u" 2>/dev/null) || continue
+        code=${r%% *}
+        t=${r##* }
+        case "$code" in
+            200|206) ;;
+            *) continue ;;
+        esac
+        if [ -z "$best_t" ] || awk "BEGIN{exit !($t < $best_t)}"; then
+            best="$u"; best_t="$t"
+        fi
+    done
+    [ -n "$best" ] && printf '%s %s' "$best_t" "$best"
+}
+
+# 单个 URL 取文件。带"低速自动放弃"：30 秒内低于 2KB/s 就当它死了。
 fetch() {
     url="$1"; out="$2"
     if have curl; then
-        # --http1.1：部分 GitHub 加速镜像的 HTTP/2 会半路断开
-        # （curl: (92) HTTP/2 stream not closed cleanly），降级到 1.1 更稳。
+        # --http1.1：部分加速镜像的 HTTP/2 会半路断开
+        # （curl: (92) HTTP/2 stream not closed cleanly），降级更稳
         curl -fsSL --http1.1 --connect-timeout 10 --max-time 600 \
              --speed-limit 2048 --speed-time 30 \
              -o "$out" "$url"
@@ -124,23 +158,30 @@ fetch() {
     fi
 }
 
-# 依次尝试：直连 → 用户指定镜像 → 内置公共镜像。
-# GitHub 的 release 资源走 objects.githubusercontent.com，在国内经常下不动，
-# 所以必须支持换源。
 download() {
     url="$1"; out="$2"
-    list="$url"
-    [ -n "${SY_MIRROR:-}" ] && list="$list ${SY_MIRROR%/}/$url"
-    if [ "${SY_NO_MIRROR:-0}" != "1" ]; then
-        list="$list https://ghproxy.net/$url https://gh-proxy.com/$url https://ghfast.top/$url"
+
+    # 先探测挑源（wget-only 环境没有 --range，跳过直接顺序试）
+    if have curl; then
+        sel=$(pick_source "$url")
+        if [ -n "$sel" ]; then
+            st=${sel%% *}
+            su=${sel#* }
+            dim "  测速后选用：$(printf '%s' "$su" | cut -c1-68)…（${st}s）"
+            if fetch "$su" "$out" && [ -s "$out" ]; then
+                return 0
+            fi
+            rm -f "$out"
+            warn "首选源下载失败，逐个回退"
+        else
+            warn "所有源探测都不通，尝试顺序下载"
+        fi
     fi
 
     i=0
-    for u in $list; do
+    for u in $(candidates "$url"); do
         i=$((i + 1))
-        if [ "$i" -gt 1 ]; then
-            dim "  换源 #$i：$(printf '%s' "$u" | cut -c1-72)…"
-        fi
+        dim "  尝试 #$i：$(printf '%s' "$u" | cut -c1-68)…"
         if fetch "$u" "$out" && [ -s "$out" ]; then
             return 0
         fi
