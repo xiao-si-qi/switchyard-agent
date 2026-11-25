@@ -30,7 +30,7 @@ func haDeviceBlock() map[string]any {
 		"name":         deviceName,
 		"manufacturer": "Switchyard",
 		"model":        model,
-		"sw_version":   kernelVersion(),
+		"sw_version":   currentVersion(), // 固件=代理版本；内核版本走 fw 传感器
 	}
 }
 
@@ -145,7 +145,7 @@ func publishHADiscovery() {
 	// 更新实体：HA 的「设置 → 更新」里会显示"已安装 → 可更新"，点「安装」发 INSTALL。
 	// 已安装版本读 state.agent_version，最新版本读 switchyard/<id>/update。
 	upd := map[string]any{
-		"name":                   "代理",
+		"name":                   "switchyard-agent",
 		"unique_id":              "switchyard_" + deviceID + "_update",
 		"object_id":              deviceID + "_update",
 		"device_class":           "firmware",

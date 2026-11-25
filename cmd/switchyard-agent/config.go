@@ -131,8 +131,10 @@ func currentVersion() string {
 }
 
 // metrics 是只读指标清单。加一个指标 = 这里加一行 + buildState 里补字段。
+// 注意 fw 是**内核版本**，不是代理版本 —— 代理版本在 agent_version，
+// 同时也是 HA 设备卡片上的"固件"（见 discovery.go 的 sw_version）。
 var metrics = []Metric{
-	{Key: "fw", Name: "固件", Icon: "mdi:chip"},
+	{Key: "fw", Name: "Linux 内核", Icon: "mdi:linux"},
 	{Key: "agent_version", Name: "代理版本", Icon: "mdi:tag-outline"},
 	{Key: "rssi", Name: "信号", Unit: "dBm", Icon: "mdi:wifi", DeviceClass: "signal_strength",
 		Precision: iptr(0)},
@@ -144,5 +146,5 @@ var metrics = []Metric{
 	{Key: "mem_used_pct", Name: "内存占用", Unit: "%", Icon: "mdi:memory", Precision: iptr(1)},
 	{Key: "disk_used_pct", Name: "存储占用", Unit: "%", Icon: "mdi:harddisk", Precision: iptr(1)},
 	{Key: "disk_free_mb", Name: "存储剩余", Unit: "MB", Icon: "mdi:database", Precision: iptr(0)},
-	{Key: "heap", Name: "可用内存", Unit: "KB", Icon: "mdi:memory", Precision: iptr(0)},
+	{Key: "heap", Name: "可用内存", Unit: "MB", Icon: "mdi:memory", Precision: iptr(1)},
 }

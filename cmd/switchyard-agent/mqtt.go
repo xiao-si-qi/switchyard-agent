@@ -35,7 +35,7 @@ func buildState() StatePayload {
 		IPWlan:      ifaceIP(wlanPrefixes),
 		RSSI:        wlanRSSI(),
 		Uptime:      uptimeSeconds(),
-		Heap:        availKB,
+		Heap:        availKB / 1024, // 统一用 MB，和 disk_free_mb 一致
 		TS:          time.Now().Unix(),
 		CPULoad:     load,
 		MemTotalKB:  totalKB,
