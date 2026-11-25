@@ -107,15 +107,44 @@ detect_init() {
 }
 
 # ---------------------------------------------------------------- 下载
-download() {
+# 单个 URL 取文件。带"低速自动放弃"：卡住的连接 30 秒内低于 2KB/s 就换源，
+# 否则在某些网络上会一直挂着不动。
+fetch() {
     url="$1"; out="$2"
     if have curl; then
-        curl -fsSL --retry 3 --connect-timeout 15 -o "$out" "$url"
+        curl -fsSL --connect-timeout 10 --max-time 600 \
+             --speed-limit 2048 --speed-time 30 \
+             -o "$out" "$url"
     elif have wget; then
-        wget -q -O "$out" --timeout=20 --tries=3 "$url"
+        wget -q -O "$out" --timeout=30 --tries=1 "$url"
     else
         die "需要 curl 或 wget 来下载二进制"
     fi
+}
+
+# 依次尝试：直连 → 用户指定镜像 → 内置公共镜像。
+# GitHub 的 release 资源走 objects.githubusercontent.com，在国内经常下不动，
+# 所以必须支持换源。
+download() {
+    url="$1"; out="$2"
+    list="$url"
+    [ -n "${SY_MIRROR:-}" ] && list="$list ${SY_MIRROR%/}/$url"
+    if [ "${SY_NO_MIRROR:-0}" != "1" ]; then
+        list="$list https://ghproxy.net/$url https://gh-proxy.com/$url https://ghfast.top/$url"
+    fi
+
+    i=0
+    for u in $list; do
+        i=$((i + 1))
+        if [ "$i" -gt 1 ]; then
+            dim "  换源 #$i：$(printf '%s' "$u" | cut -c1-72)…"
+        fi
+        if fetch "$u" "$out" && [ -s "$out" ]; then
+            return 0
+        fi
+        rm -f "$out"
+    done
+    return 1
 }
 
 # ---------------------------------------------------------------- 主流程
@@ -138,10 +167,11 @@ else
         URL="https://github.com/$REPO/releases/download/v$VERSION/switchyard-agent-linux-$ARCH"
     fi
     info "下载 $URL"
-    download "$URL" "$TMP/switchyard-agent" || die "下载失败：这台机器上没有可用的 release，或者网络不通。
+    download "$URL" "$TMP/switchyard-agent" || die "下载失败：所有源都拿不到二进制。
   解决办法（任选其一）：
-    1) 在能上网的机器上编译后，用 SY_BIN=<文件> 重跑本脚本
-    2) git clone 后执行 make dist，再用 SY_BIN 指定产物"
+    1) 指定镜像：SY_MIRROR=https://ghproxy.net/ sh install.sh
+    2) 在能上网的机器上编译后，用 SY_BIN=<文件> 重跑本脚本
+    3) git clone 后执行 make dist，再用 SY_BIN 指定产物"
 fi
 
 chmod 0755 "$TMP/switchyard-agent"

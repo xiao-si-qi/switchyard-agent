@@ -59,6 +59,12 @@ SY_BIN=dist/switchyard-agent-linux-amd64 sh install.sh
 | `SY_BIN` | — | 用本地二进制，跳过下载 |
 | `SY_FORCE` | `0` | `1` = 覆盖已有配置 |
 | `SY_NO_START` | `0` | `1` = 只装不启动 |
+| `SY_MIRROR` | — | 下载加速前缀，如 `https://ghproxy.net/` |
+| `SY_NO_MIRROR` | `0` | `1` = 只用直连，不试公共镜像 |
+
+> **网络提示**：GitHub 的 release 二进制走 `objects.githubusercontent.com`，在国内经常下不动。
+> 安装脚本会依次尝试「直连 → `SY_MIRROR` → 内置公共镜像（ghproxy.net / gh-proxy.com / ghfast.top）」，
+> 单个源卡住 30 秒（低于 2KB/s）就自动换下一个。
 
 ## 配置
 
