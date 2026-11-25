@@ -202,9 +202,17 @@ func checkUpdate() string {
 		return ""
 	}
 	logf("[update] 当前 %s，最新 %s", cur, latest)
+
+	// 只有确实"更新"才把 latest 报给 HA。否则（版本相同、或本地比 release 还新，
+	// 比如手工装了未发布的构建）HA 的 update 实体会认为"有更新"甚至提供降级。
+	shown := latest
+	if !versionGreater(latest, cur) {
+		shown = cur
+	}
 	publish(tUpdate, map[string]any{
-		"latest":  latest,
+		"latest":  shown,
 		"current": cur,
+		"tag":     latest,
 		"url":     fmt.Sprintf("https://github.com/%s/releases/tag/v%s", updateRepo, latest),
 	}, true)
 	return latest
