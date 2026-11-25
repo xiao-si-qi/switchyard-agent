@@ -58,3 +58,10 @@ SY_INTERVAL=60
 
 # 可移动存储插拔探测，容器/无 /sys 环境设为 0
 #SY_USB_DETECT=1
+
+# DNS 兼容：某些路由器/网关的 DNS 处理 EDNS0 有 bug，会让 Go 程序报
+# "no such host"（而 ping 正常）。判据：
+#   dig +edns=0 ha.example.com @<路由器>   → 畸形包
+#   dig +noedns  ha.example.com @<路由器>   → 正常
+# 遇到这种情况设 1，让 Go 退回不带 EDNS0 的查询。
+#SY_DNS_NO_EDNS0=1

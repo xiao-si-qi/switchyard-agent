@@ -49,6 +49,9 @@ var (
 )
 
 func main() {
+	// 必须在任何 DNS 解析之前（preflight 就会解析域名）
+	applyDNSWorkarounds()
+
 	if err := os.MkdirAll(stateDir, 0o755); err != nil {
 		logf("[warn] 无法创建状态目录 %s: %v（interval/seq 将无法持久化）", stateDir, err)
 	}
