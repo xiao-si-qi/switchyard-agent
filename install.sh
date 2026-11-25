@@ -44,7 +44,20 @@ die()  { printf "${C_ERR}错误:${C_END} %s\n" "$*" >&2; exit 1; }
 dim()  { printf "${C_DIM}%s${C_END}\n" "$*"; }
 
 # ---------------------------------------------------------------- 环境检查
-[ "$(id -u)" -eq 0 ] || die "需要 root 权限（要写 /etc、/usr/local、/var/log）"
+if [ "$(id -u)" -ne 0 ]; then
+    cat >&2 <<'EOF'
+错误: 需要 root 权限（要写 /etc、/usr/local、/var/log）
+
+注意 sudo 只作用于它后面那一条命令，管道右边不会继承 ——
+所以 `sudo curl … | sh` 里 sh 仍然是普通用户，必然失败。
+
+正确写法（任选其一）：
+  curl -fsSL <url> | sudo sh
+  curl -fsSL <url> -o /tmp/sy-install.sh && sudo sh /tmp/sy-install.sh
+  sudo sh -c 'curl -fsSL <url> | sh'
+EOF
+    exit 1
+fi
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
