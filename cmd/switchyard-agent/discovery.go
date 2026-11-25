@@ -43,7 +43,7 @@ func metricObject(m Metric) string {
 
 // buildHAEntities 列出本设备往 HA 发布过哪些实体，供 Switchyard 删除设备时清理。
 func buildHAEntities() []HAEntity {
-	out := make([]HAEntity, 0, len(metrics)+2)
+	out := make([]HAEntity, 0, len(metrics)+3)
 	for _, m := range metrics {
 		comp := "sensor"
 		if m.Kind == "binary_sensor" {
@@ -54,6 +54,7 @@ func buildHAEntities() []HAEntity {
 	out = append(out,
 		HAEntity{Component: "binary_sensor", Object: "online"},
 		HAEntity{Component: "button", Object: "reboot"},
+		HAEntity{Component: "update", Object: "update"},
 	)
 	return out
 }
@@ -141,11 +142,34 @@ func publishHADiscovery() {
 		n++
 	}
 
+	// 更新实体：HA 的「设置 → 更新」里会显示"已安装 → 可更新"，点「安装」发 INSTALL。
+	// 已安装版本读 state.agent_version，最新版本读 switchyard/<id>/update。
+	upd := map[string]any{
+		"name":                   "代理",
+		"unique_id":              "switchyard_" + deviceID + "_update",
+		"object_id":              deviceID + "_update",
+		"device_class":           "firmware",
+		"title":                  "switchyard-agent",
+		"state_topic":            tState,
+		"value_template":         "{{ value_json.agent_version }}",
+		"latest_version_topic":   tUpdate,
+		"latest_version_template": "{{ value_json.latest }}",
+		"command_topic":          haCmdTopic("update"),
+		"payload_install":        "INSTALL",
+		"release_url":            "https://github.com/" + updateRepo + "/releases",
+		"device":                 dev,
+		"origin":                 origin,
+	}
+	if publish(haConfigTopic("update", "update"), upd, true) {
+		n++
+	}
+
 	logf("[discovery] 发布 %d 个 HA 实体（不经过 Switchyard）", n)
 }
 
 // handleHACmd 处理 HA 下发的控制命令（主题 switchyard/<id>/ha/<obj>/set）。
-// payload 用 HA 的惯例值（button 是 PRESS），与 Switchyard 的 JSON 命令无关。
+// payload 用 HA 的惯例值（button 是 PRESS，update 是 INSTALL），
+// 与 Switchyard 的 JSON 命令无关。
 func handleHACmd(obj string, payload []byte) {
 	body := strings.TrimSpace(string(payload))
 	logf("[ha-cmd] %s = %q", obj, body)
@@ -157,6 +181,32 @@ func handleHACmd(obj string, payload []byte) {
 			logf("[ha-cmd] 重启失败: %v", err)
 			publishDiag("重启失败: " + err.Error())
 		}
+
+	case "update":
+		if !strings.EqualFold(body, "INSTALL") {
+			logf("[ha-cmd] 忽略非 INSTALL 的更新请求: %q", body)
+			return
+		}
+		// 下载可能有几 MB，必须放到后台：在 MQTT 回调里阻塞会拖死 PINGREQ
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					logf("[update] panic: %v", r)
+					publishDiag(fmt.Sprintf("升级出错: %v", r))
+				}
+			}()
+			latest, err := latestVersion()
+			if err != nil {
+				logf("[update] 查询最新版本失败: %v", err)
+				publishDiag("查询最新版本失败: " + err.Error())
+				return
+			}
+			if err := selfUpdate(latest); err != nil {
+				logf("[update] 升级失败: %v", err)
+				publishDiag("升级失败: " + err.Error())
+			}
+		}()
+
 	default:
 		logf("[ha-cmd] 未知对象: %s", obj)
 	}

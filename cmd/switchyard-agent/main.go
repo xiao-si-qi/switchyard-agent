@@ -42,6 +42,7 @@ var (
 	tDiag  = "switchyard/" + deviceID + "/diag"
 	tLog   = "switchyard/" + deviceID + "/log"
 	tAck   = "switchyard/" + deviceID + "/ack"
+	tUpdate = "switchyard/" + deviceID + "/update" // 最新版本号，供 HA 的 update 实体读
 	// HA 控制下行通配
 	tHACmdWild = "switchyard/" + deviceID + "/ha/+/set"
 	tHACmdPref = "switchyard/" + deviceID + "/ha/"
@@ -143,7 +144,7 @@ func main() {
 		}
 	}()
 
-	// 定期补发 HA discovery：broker 丢 retained、或别的组件误清时能自愈
+	// 定时补发 HA discovery：broker 丢 retained、或别的组件误清时能自愈
 	go func() {
 		for {
 			time.Sleep(discoveryRefresh)
@@ -152,6 +153,9 @@ func main() {
 			}
 		}
 	}()
+
+	// 定时检查更新（默认 6 小时一次），结果发到 switchyard/<id>/update
+	go updateLoop()
 
 	// 可移动存储插拔事件（可在容器里用 SY_USB_DETECT=0 关掉）
 	if usbDetect {

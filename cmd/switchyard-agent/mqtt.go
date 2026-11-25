@@ -29,6 +29,7 @@ func buildState() StatePayload {
 		ID:          deviceID,
 		Type:        devType,
 		FW:          kernelVersion(),
+		AgentVersion: currentVersion(),
 		IP:          primaryIP(),
 		IPEth:       ifaceIP(ethPrefixes),
 		IPWlan:      ifaceIP(wlanPrefixes),

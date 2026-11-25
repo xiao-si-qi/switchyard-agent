@@ -9,7 +9,8 @@ import "encoding/json"
 type StatePayload struct {
 	ID          string   `json:"id"`
 	Type        string   `json:"type"`
-	FW          string   `json:"fw"`
+	FW          string   `json:"fw"`            // 内核版本
+	AgentVersion string  `json:"agent_version"` // 代理自身版本（HA 的 update 实体读它）
 	IP          *string  `json:"ip"`      // 主 IP（有线优先），台账用
 	IPEth       *string  `json:"ip_eth"`  // 有线网卡的 IPv4
 	IPWlan      *string  `json:"ip_wlan"` // 无线网卡的 IPv4

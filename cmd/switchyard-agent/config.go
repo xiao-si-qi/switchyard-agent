@@ -117,11 +117,23 @@ var (
 	logTailN    = 40
 	diagGap     = 60 * time.Second
 	discoveryRefresh = 10 * time.Minute
+
+	// ---- 自更新 ----
+	updateRepo = env("SY_UPDATE_REPO", "xiao-si-qi/switchyard-agent")
 )
+
+// currentVersion 返回编译时注入的版本；源码运行为 dev（dev 不参与自更新）。
+func currentVersion() string {
+	if version == "" {
+		return "dev"
+	}
+	return version
+}
 
 // metrics 是只读指标清单。加一个指标 = 这里加一行 + buildState 里补字段。
 var metrics = []Metric{
 	{Key: "fw", Name: "固件", Icon: "mdi:chip"},
+	{Key: "agent_version", Name: "代理版本", Icon: "mdi:tag-outline"},
 	{Key: "rssi", Name: "信号", Unit: "dBm", Icon: "mdi:wifi", DeviceClass: "signal_strength",
 		Precision: iptr(0)},
 	{Key: "uptime", Name: "运行时长", Unit: "s", Icon: "mdi:clock-outline",

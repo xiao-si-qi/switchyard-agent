@@ -80,6 +80,7 @@ func handleCmd(msg mqtt.Message) {
 
 	switch cmd.Cmd {
 	case "state":
+		go checkUpdate() // 顺便刷新一次"最新版本"，让 HA 的 update 实体马上有值
 		publishMeta()
 		publishState()
 
