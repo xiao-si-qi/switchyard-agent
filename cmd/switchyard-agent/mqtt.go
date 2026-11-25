@@ -12,40 +12,49 @@ import (
 	"time"
 )
 
-func buildState() StatePayload {
+func buildState() map[string]any {
 	totalKB, availKB := memInfo()
-	var usedPct *float64
+	var memPct any
 	if totalKB > 0 {
-		p := float64(totalKB-availKB) / float64(totalKB) * 100
-		p = float64(int(p*10)) / 10
-		usedPct = &p
+		memPct = round1(float64(totalKB-availKB) / float64(totalKB) * 100)
 	}
-	var load *float64
+	var load any
 	if v, ok := cpuLoad.Load().(float64); ok {
-		load = &v
+		load = v
 	}
-	freeMB, diskPct := diskUsage()
-	return StatePayload{
-		ID:          deviceID,
-		Type:        devType,
-		FW:          kernelVersion(),
-		AgentVersion: currentVersion(),
-		IP:          primaryIP(),
-		IPEth:       ifaceIP(ethPrefixes),
-		IPWlan:      ifaceIP(wlanPrefixes),
-		RSSI:        wlanRSSI(),
-		Uptime:      uptimeSeconds(),
-		Heap:        availKB / 1024, // 统一用 MB，和 disk_free_mb 一致
-		TS:          time.Now().Unix(),
-		CPULoad:     load,
-		MemTotalKB:  totalKB,
-		MemFreeKB:   availKB,
-		MemUsedPct:  usedPct,
-		DiskFreeMB:  freeMB,
-		DiskUsedPct: diskPct,
-		USB:         usbPresent(),
-		Interval:    interval.Load(),
+	freeMB, diskPct := rootUsage()
+
+	st := map[string]any{
+		"id":      deviceID,
+		"type":    devType,
+		"fw":      kernelVersion(), // 内核版本，不是代理版本
+		"agent_version": currentVersion(),
+		"ip":       primaryIP(),
+		"ip_eth":   ifaceIP(ethPrefixes),
+		"ip_wlan":  ifaceIP(wlanPrefixes),
+		"rssi":     wlanRSSI(),
+		"uptime":   uptimeSeconds(),
+		"heap":     availKB / 1024, // MB，与 disk_free_* 单位统一
+		"ts":       time.Now().Unix(),
+		"cpu_load": load,
+		"mem_total_kb":  totalKB,
+		"mem_free_kb":   availKB,
+		"mem_used_pct":  memPct,
+		"disk_free_mb":  freeMB,  // 根分区（历史字段名，保持不变）
+		"disk_used_pct": diskPct,
+		"usb":      usbPresent(),
+		"interval": interval.Load(),
 	}
+	// 自动发现出来的其它本地挂载：/data → disk_free_data / disk_used_data
+	for _, m := range mounts() {
+		if m.Mount == "/" {
+			continue
+		}
+		slug := mountSlug(m.Mount)
+		st["disk_free_"+slug] = m.FreeMB
+		st["disk_used_"+slug] = m.UsedPct
+	}
+	return st
 }
 
 func buildMeta() MetaPayload {
@@ -55,7 +64,7 @@ func buildMeta() MetaPayload {
 		Name:       deviceName,
 		Model:      model,
 		Interval:   interval.Load(),
-		Metrics:    metrics,
+		Metrics:    allMetrics(),
 		HAEntities: buildHAEntities(),
 	}
 }

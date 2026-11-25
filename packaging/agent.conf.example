@@ -46,6 +46,11 @@ SY_INTERVAL=60
 # 重启命令，默认自动探测：systemd 用 "systemctl reboot"，否则 /sbin/reboot
 #SY_REBOOT_CMD=
 
+# 是否允许重启本机（HA 的重启按钮 + Switchyard 的 cmd:reboot）
+# 生产服务器建议设 0：一台机器重启会连带它承载的反代/隧道/TLS 一起消失。
+# 设 0 后 HA 里不会出现重启按钮，两条命令路径都会被拒绝并写 diag。
+#SY_ALLOW_REBOOT=1
+
 # 网卡名前缀（空格分隔）：默认 "eth en" 和 "wlan wl"
 # 特殊环境可覆盖，比如 SY_ETH_PREFIX=br0
 #SY_ETH_PREFIX=

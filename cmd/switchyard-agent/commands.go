@@ -85,6 +85,11 @@ func handleCmd(msg mqtt.Message) {
 		publishState()
 
 	case "reboot":
+		if !allowReboot {
+			ok, errMsg = false, "本机已禁用重启（SY_ALLOW_REBOOT=0）"
+			publishDiag("收到 cmd:reboot 但本机已禁用重启")
+			break
+		}
 		if cmd.Seq != nil {
 			publishAck(*cmd.Seq, true, "")
 			lastSeq.Store(*cmd.Seq)

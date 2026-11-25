@@ -5,7 +5,8 @@ import "encoding/json"
 // 与 broker 交换的 JSON 结构。字段名就是协议的一部分：
 // Switchyard 台账和 HA 的 value_template 都按这些 key 取值，改名等于破坏协议。
 
-// StatePayload 是 switchyard/<id>/state 的内容（retained）。
+// StatePayload 是 switchyard/<id>/state 的**字段参考**（retained）。
+// 实际发送用 map 构造（buildState），因为磁盘挂载数量是运行时才知道的。
 type StatePayload struct {
 	ID          string   `json:"id"`
 	Type        string   `json:"type"`

@@ -110,6 +110,9 @@ var (
 	wlanPrefixes = strings.Fields(env("SY_WLAN_PREFIX", "wlan wl"))
 	// U 盘探测：某些环境（容器、无 /sys）要关掉
 	usbDetect = envBool("SY_USB_DETECT", true)
+	// 是否允许重启本机。生产服务器建议关掉：一台机器重启会连带它承载的服务
+	// （反向代理、隧道、TLS 终止）一起消失，误触代价很高。
+	allowReboot = envBool("SY_ALLOW_REBOOT", true)
 
 	// ---- 行为 ----
 	intervalMin = 15
@@ -130,10 +133,11 @@ func currentVersion() string {
 	return version
 }
 
-// metrics 是只读指标清单。加一个指标 = 这里加一行 + buildState 里补字段。
+// baseMetrics 是固定的只读指标。加一个指标 = 这里加一行 + buildState 里补字段。
 // 注意 fw 是**内核版本**，不是代理版本 —— 代理版本在 agent_version，
 // 同时也是 HA 设备卡片上的"固件"（见 discovery.go 的 sw_version）。
-var metrics = []Metric{
+// 磁盘挂载是动态发现的，见 disk.go 的 diskMetrics()。
+var baseMetrics = []Metric{
 	{Key: "fw", Name: "Linux 内核", Icon: "mdi:linux"},
 	{Key: "agent_version", Name: "代理版本", Icon: "mdi:tag-outline"},
 	{Key: "rssi", Name: "信号", Unit: "dBm", Icon: "mdi:wifi", DeviceClass: "signal_strength",
@@ -147,4 +151,13 @@ var metrics = []Metric{
 	{Key: "disk_used_pct", Name: "存储占用", Unit: "%", Icon: "mdi:harddisk", Precision: iptr(1)},
 	{Key: "disk_free_mb", Name: "存储剩余", Unit: "MB", Icon: "mdi:database", Precision: iptr(0)},
 	{Key: "heap", Name: "可用内存", Unit: "MB", Icon: "mdi:memory", Precision: iptr(1)},
+}
+
+// allMetrics 返回本次要声明的全部指标：固定指标 + 自动发现的磁盘挂载。
+// 挂载点变化时列表会变，HA 里的实体随之增减（discovery.go 会清掉消失的那些）。
+func allMetrics() []Metric {
+	out := make([]Metric, 0, len(baseMetrics)+len(mounts())*2)
+	out = append(out, baseMetrics...)
+	out = append(out, diskMetrics()...)
+	return out
 }

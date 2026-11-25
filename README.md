@@ -104,6 +104,9 @@ SY_BIN=dist/switchyard-agent-linux-amd64 sh install.sh
 | `SY_ETH_PREFIX` | `eth en` | 有线网卡名前缀（空格分隔） |
 | `SY_WLAN_PREFIX` | `wlan wl` | 无线网卡名前缀 |
 | `SY_USB_DETECT` | `1` | 可移动存储插拔探测，容器里设 `0` |
+| `SY_DISK_INCLUDE_NET` | `0` | `1` = 连 NFS/CIFS/FUSE 也统计（**有卡死风险**，见下） |
+| `SY_DISK_SCAN_SECONDS` | `60` | 重新扫描挂载点的间隔 |
+| `SY_ALLOW_REBOOT` | `1` | `0` = 禁用重启（不发布 HA 按钮，且拒绝 `cmd:reboot`）。**生产服务器建议设 0** |
 
 ## HA 里会出现的实体
 
@@ -123,6 +126,29 @@ SY_BIN=dist/switchyard-agent-linux-amd64 sh install.sh
 | `button.*_reboot` | button | 点一下重启本机 |
 
 指标都归到 HA 设备的「诊断」分区，主界面只留有用的。
+
+### 磁盘：自动发现所有本地挂载
+
+启动时和每 60 秒扫一次 `/proc/mounts`，为每个**本地块设备**上的文件系统生成
+一对实体（「存储剩余」MB + 「存储占用」%），名称带挂载点，例如：
+
+```
+存储剩余            6,137 MB       ← 根分区 /
+存储占用            15.3 %
+存储剩余 (/mnt/usb)  113,819 MB
+存储占用 (/mnt/usb)  5 %
+```
+
+规则：
+
+- **只统计本地文件系统**（ext4/xfs/btrfs/zfs/f2fs/vfat/exfat/ntfs…）
+- **默认跳过网络文件系统**（NFS/CIFS/sshfs/FUSE）：`statfs` 打到一个挂死的
+  NFS 上会让进程卡在 D 状态，等于 agent 失联。确实要看就设 `SY_DISK_INCLUDE_NET=1`
+- **按设备去重**：bind mount 和同一个设备的多个挂载点只统计一次
+- 最多上报 12 个挂载，按可用空间从大到小
+- 拔盘/卸载后，对应实体会被自动清掉（不留僵尸）
+
+根分区沿用历史字段 `disk_free_mb` / `disk_used_pct`，实体 ID 不变，历史数据不丢。
 
 ## 服务管理
 

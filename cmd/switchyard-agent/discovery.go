@@ -12,9 +12,16 @@ package main
 import (
 	"fmt"
 	"strings"
+	"sync"
 )
 
 const haPrefix = "homeassistant"
+
+// 上一轮发布过的**动态**实体（磁盘挂载），用于在挂载消失后清掉残留配置。
+var (
+	publishedDynamic   = map[string]bool{}
+	publishedDynamicMu sync.Mutex
+)
 
 func haCmdTopic(obj string) string {
 	return "switchyard/" + deviceID + "/ha/" + obj + "/set"
@@ -43,19 +50,20 @@ func metricObject(m Metric) string {
 
 // buildHAEntities 列出本设备往 HA 发布过哪些实体，供 Switchyard 删除设备时清理。
 func buildHAEntities() []HAEntity {
-	out := make([]HAEntity, 0, len(metrics)+3)
-	for _, m := range metrics {
+	ms := allMetrics()
+	out := make([]HAEntity, 0, len(ms)+3)
+	for _, m := range ms {
 		comp := "sensor"
 		if m.Kind == "binary_sensor" {
 			comp = "binary_sensor"
 		}
 		out = append(out, HAEntity{Component: comp, Object: metricObject(m)})
 	}
-	out = append(out,
-		HAEntity{Component: "binary_sensor", Object: "online"},
-		HAEntity{Component: "button", Object: "reboot"},
-		HAEntity{Component: "update", Object: "update"},
-	)
+	out = append(out, HAEntity{Component: "binary_sensor", Object: "online"})
+	if allowReboot {
+		out = append(out, HAEntity{Component: "button", Object: "reboot"})
+	}
+	out = append(out, HAEntity{Component: "update", Object: "update"})
 	return out
 }
 
@@ -66,7 +74,8 @@ func publishHADiscovery() {
 	origin := map[string]any{"name": "switchyard-agent"}
 	n := 0
 
-	for _, m := range metrics {
+	curDynamic := map[string]bool{}
+	for _, m := range allMetrics() {
 		obj := metricObject(m)
 		kind := m.Kind
 		if kind == "" {
@@ -109,7 +118,26 @@ func publishHADiscovery() {
 		if publish(haConfigTopic(kind, obj), cfg, true) {
 			n++
 		}
+		if strings.HasPrefix(m.Key, "disk_free_") || strings.HasPrefix(m.Key, "disk_used_") {
+			curDynamic[kind+"/"+obj] = true
+		}
 	}
+
+	// 挂载点消失（拔盘、卸载）后，把上一轮发过的对应实体清掉，避免留下僵尸
+	publishedDynamicMu.Lock()
+	for k := range publishedDynamic {
+		if curDynamic[k] {
+			continue
+		}
+		parts := strings.SplitN(k, "/", 2)
+		if len(parts) == 2 {
+			if publish(haConfigTopic(parts[0], parts[1]), "", true) {
+				logf("[discovery] 清理已消失的磁盘实体 %s", k)
+			}
+		}
+	}
+	publishedDynamic = curDynamic
+	publishedDynamicMu.Unlock()
 
 	// 在线状态：读 availability（LWT 维护）
 	online := map[string]any{
@@ -128,6 +156,10 @@ func publishHADiscovery() {
 	}
 
 	// 重启按钮：HA 点一下 → 发到 ha/reboot/set
+	// SY_ALLOW_REBOOT=0 时不发布，并把之前发过的清掉（避免残留一个还能点的按钮）
+	if !allowReboot {
+		publish(haConfigTopic("button", "reboot"), "", true)
+	}
 	reboot := map[string]any{
 		"name":          "重启",
 		"unique_id":     "switchyard_" + deviceID + "_reboot",
@@ -138,7 +170,7 @@ func publishHADiscovery() {
 		"device":        dev,
 		"origin":        origin,
 	}
-	if publish(haConfigTopic("button", "reboot"), reboot, true) {
+	if allowReboot && publish(haConfigTopic("button", "reboot"), reboot, true) {
 		n++
 	}
 
@@ -175,6 +207,11 @@ func handleHACmd(obj string, payload []byte) {
 	logf("[ha-cmd] %s = %q", obj, body)
 	switch obj {
 	case "reboot":
+		if !allowReboot {
+			logf("[ha-cmd] 已禁用重启（SY_ALLOW_REBOOT=0），忽略")
+			publishDiag("收到重启请求但本机已禁用（SY_ALLOW_REBOOT=0）")
+			return
+		}
 		logf("[ha-cmd] 执行重启")
 		publishEvent("reboot_requested", "info", "ha")
 		if err := doReboot(); err != nil {
