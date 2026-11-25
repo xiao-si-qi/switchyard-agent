@@ -112,7 +112,9 @@ detect_init() {
 fetch() {
     url="$1"; out="$2"
     if have curl; then
-        curl -fsSL --connect-timeout 10 --max-time 600 \
+        # --http1.1：部分 GitHub 加速镜像的 HTTP/2 会半路断开
+        # （curl: (92) HTTP/2 stream not closed cleanly），降级到 1.1 更稳。
+        curl -fsSL --http1.1 --connect-timeout 10 --max-time 600 \
              --speed-limit 2048 --speed-time 30 \
              -o "$out" "$url"
     elif have wget; then
