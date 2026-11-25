@@ -7,9 +7,13 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
+	"strconv"
 	"strings"
 	"time"
+
+	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
 func buildState() map[string]any {
@@ -148,7 +152,7 @@ func publishAck(seq int64, ok bool, errMsg string) bool {
 //	MQTT_SERVER_NAME=xxx  覆盖 SNI / 证书校验主机名，默认用 MQTT_HOST
 func mqttEndpoint() (string, *tls.Config, error) {
 	if !envBool("MQTT_TLS", false) {
-		return fmt.Sprintf("tcp://%s:%d", host, port), nil, nil
+		return fmt.Sprintf("tcp://%s", net.JoinHostPort(host, strconv.Itoa(port))), nil, nil
 	}
 
 	tlsCfg := &tls.Config{
@@ -174,5 +178,75 @@ func mqttEndpoint() (string, *tls.Config, error) {
 	}
 
 	// paho 用 ssl:// 表示"TCP + TLS"
-	return fmt.Sprintf("ssl://%s:%d", host, port), tlsCfg, nil
+	return fmt.Sprintf("ssl://%s", net.JoinHostPort(host, strconv.Itoa(port))), tlsCfg, nil
+}
+
+// ---------------------------------------------------------------- 可观测性
+
+// pahoLogger 把 paho 的内部日志接到我们自己的日志里。
+// paho 默认把 ERROR/CRITICAL/WARN 全部丢进 NOOPLogger —— 连接失败、证书错误、
+// 认证被拒这些全都不出声，排障时等于瞎的。
+type pahoLogger struct{ prefix string }
+
+// 这些是 paho 内部存储的常规噪音（QoS1 重发后清理），对排障没用
+var pahoNoise = []string{"store]", "memorystore"}
+
+func pahoIsNoise(s string) bool {
+	for _, n := range pahoNoise {
+		if strings.Contains(s, n) {
+			return true
+		}
+	}
+	return false
+}
+
+func (p pahoLogger) Println(v ...any) {
+	s := fmt.Sprintln(v...)
+	if pahoIsNoise(s) {
+		return
+	}
+	logf("%s%s", p.prefix, strings.TrimRight(s, "\n"))
+}
+
+func (p pahoLogger) Printf(format string, v ...any) {
+	if pahoIsNoise(format) {
+		return
+	}
+	logf(p.prefix+strings.TrimRight(format, "\n"), v...)
+}
+
+// setupPahoLogging 打开 paho 的错误输出；SY_MQTT_DEBUG=1 时连协议细节也打。
+func setupPahoLogging() {
+	mqtt.ERROR = pahoLogger{"[paho:error] "}
+	mqtt.CRITICAL = pahoLogger{"[paho:critical] "}
+	mqtt.WARN = pahoLogger{"[paho:warn] "}
+	if envBool("SY_MQTT_DEBUG", false) {
+		mqtt.DEBUG = pahoLogger{"[paho:debug] "}
+		logf("[mqtt] 已开启 paho 协议级日志（SY_MQTT_DEBUG=1）")
+	}
+}
+
+// preflight 在建立 MQTT 之前先做一次 DNS + TCP 探测，把结果打进日志。
+// 连不上时能立刻分清是"域名解析不出来"还是"端口不通"，还是"TLS/认证被拒"。
+// 不阻塞主流程：失败只记日志，真正的连接仍由 paho 重试。
+func preflight() {
+	addr := net.JoinHostPort(host, strconv.Itoa(port))
+
+	ips, err := net.LookupHost(host)
+	if err != nil {
+		logf("[preflight] ❌ 域名解析失败: %v", err)
+		return
+	}
+	logf("[preflight] %s 解析到 %s", host, strings.Join(ips, ", "))
+
+	d := net.Dialer{Timeout: 5 * time.Second}
+	conn, err := d.Dial("tcp", addr)
+	if err != nil {
+		logf("[preflight] ❌ TCP 连不上 %s: %v（检查防火墙 / 端口 / 出网策略）", addr, err)
+		return
+	}
+	local := conn.LocalAddr().String()
+	remote := conn.RemoteAddr().String()
+	_ = conn.Close()
+	logf("[preflight] ✅ TCP 可达 %s（本地 %s → 远端 %s）", addr, local, remote)
 }

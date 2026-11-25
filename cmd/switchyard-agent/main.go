@@ -57,6 +57,9 @@ func main() {
 
 	go cpuSampler()
 
+	setupPahoLogging()
+	preflight()
+
 	brokerURL, tlsCfg, err := mqttEndpoint()
 	if err != nil {
 		logf("[fatal] %v", err)
@@ -128,8 +131,14 @@ func main() {
 	}
 	logf("[agent] %s v%s (type=%s) → %s，每 %ds 上报", deviceID, v, devType, brokerURL, interval.Load())
 
-	if tok := client.Connect(); tok.WaitTimeout(30*time.Second) && tok.Error() != nil {
-		logf("[mqtt] 首次连接失败: %v（后台继续重试）", tok.Error())
+	tok := client.Connect()
+	if !tok.WaitTimeout(30 * time.Second) {
+		// 注意：WaitTimeout 返回 false 表示"还在连"，此时不能调 tok.Error()
+		// （它会阻塞到 token 完成）。旧代码用 && 短路，超时这条分支一条日志都不打，
+		// 于是"连不上"看起来像是"没报错"。
+		logf("[mqtt] 30 秒内未连上 %s（后台每 5 秒重试）—— 看上面的 preflight 结果", brokerURL)
+	} else if err := tok.Error(); err != nil {
+		logf("[mqtt] 首次连接失败: %v（后台继续重试）", err)
 	}
 
 	// 周期上报
@@ -156,6 +165,22 @@ func main() {
 
 	// 定时检查更新（默认 6 小时一次），结果发到 switchyard/<id>/update
 	go updateLoop()
+
+	// 连接看门狗：长时间连不上要能在日志里看见，而不是静默重试
+	go func() {
+		lastWarn := time.Time{}
+		for {
+			time.Sleep(30 * time.Second)
+			if client != nil && client.IsConnectionOpen() {
+				lastWarn = time.Time{}
+				continue
+			}
+			if time.Since(lastWarn) >= 5*time.Minute {
+				lastWarn = time.Now()
+				logf("[mqtt] ⚠ 仍未连接到 %s（已重试多次）—— 检查 preflight 输出、防火墙与凭据", brokerURL)
+			}
+		}
+	}()
 
 	// 可移动存储插拔事件（可在容器里用 SY_USB_DETECT=0 关掉）
 	if usbDetect {
